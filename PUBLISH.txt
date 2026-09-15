@@ -1,0 +1,51 @@
+FXR60 / FXR90 IoT Connector API Documentation — Publish Package
+================================================================
+
+This folder is a publish-only copy. Use your working repo for edits and rebuilds.
+
+Contents
+--------
+- index.html                         Landing page (REST + MQTT)
+- mqtt/FXR_60-90_mqtt_api.json
+- mqtt/docs/                         MQTT custom viewer + Swagger UI
+- rest/FXR_60-90_rest_api.yaml       REST spec (documentation)
+- rest/FXR_60-90_rest_api_testable.yaml   REST spec (Try it out with reader IP)
+- rest/docs/swagger.html             REST Swagger UI (docs only)
+- rest/docs/swagger-test.html        REST Swagger UI (test against reader)
+
+How to publish
+--------------
+Upload this entire folder to your web host, keeping the same directory structure.
+
+Entry points after upload:
+- /index.html
+- /mqtt/docs/index.html              (MQTT reader view)
+- /mqtt/docs/swagger.html            (MQTT Swagger)
+- /rest/docs/swagger.html            (REST Swagger — documentation)
+- /rest/docs/swagger-test.html       (REST Swagger — enter reader IP to test)
+
+Raw specs (for download or tooling):
+- /mqtt/FXR_60-90_mqtt_api.json
+- /rest/FXR_60-90_rest_api.yaml
+- /rest/FXR_60-90_rest_api_testable.yaml
+
+Test REST against a reader
+--------------------------
+1. Open /rest/docs/swagger-test.html
+2. In Servers, enter the reader IP in readerHost (e.g. 192.168.1.50)
+3. Choose HTTPS or HTTP
+4. Authorize, then Try it out on an endpoint
+
+Test locally before publish
+---------------------------
+  cd mqtt\docs
+  py -m http.server 8765
+
+Then open: http://localhost:8765/index.html
+
+Refresh this package
+--------------------
+Rebuild in the working repo, then recopy publish files from:
+  fxr60-90-api-docs-main
+
+Built: 2026-09-15
