@@ -112,7 +112,6 @@
     "userapp_event": "Management-events",
     "notification_event": "Management-events",
     "tagDataEvents": "Tag-data-events",
-    "mode_tag_data_events": "Tag-data-events",
     "simple_tag_data_events": "Tag-data-events",
     "inventory_tag_data_events": "Tag-data-events",
     "conveyor_tag_data_events": "Tag-data-events",
@@ -315,7 +314,7 @@
         ]
       },
       {
-        "name": "Display Events",
+        "name": "Notifications",
         "operations": [
           "notification_event"
         ]
@@ -334,7 +333,8 @@
   ],
   "excluded_operations": [
     "localrest_login",
-    "async-events"
+    "async-events",
+    "mode_tag_data_events"
   ],
   "display_name_aliases": {
     "get_supportedStandardList": "get_SupportedStandardlist"
@@ -357,22 +357,22 @@
     "set_dataToRG": "Set Data to RG",
     "set_region": "Set Reader Region Configuration",
     "heartbeat": "Heartbeat",
-    "heartbeat_radio_control": "Radio Control",
-    "heartbeat_reader_gateway": "Reader Gateway",
-    "heartbeat_system": "System",
-    "heartbeat_userapps": "User Apps",
+    "heartbeat_radio_control": "Radio Control (radio_control)",
+    "heartbeat_reader_gateway": "Reader Gateway (reader_gateway)",
+    "heartbeat_system": "System (system)",
+    "heartbeat_userapps": "User Apps (userapps)",
     "heartbeat_interval": "Heartbeat Interval",
     "error": "Error Events",
     "warning": "Warning Events",
     "firmwareUpdateProgress": "Firmware Update Progress",
     "tagDataEvents": "Tag Data Events",
-    "mode_tag_data_events": "Mode Tag Data Events",
+    "mode_tag_data_events": "Tag Read Data Fields",
     "simple_tag_data_events": "SIMPLE Tag Data Events",
     "inventory_tag_data_events": "INVENTORY Tag Data Events",
     "conveyor_tag_data_events": "CONVEYOR Tag Data Events",
     "custom_tag_data_events": "CUSTOM Tag Data Events",
     "ble_data_events": "BLE Data Events",
-    "userapp_event": "Custom User App Event",
+    "userapp_event": "User App Event",
     "gpi": "GPI Event",
     "gpo": "GPO Event",
     "notification_event": "Notification Event",
@@ -381,6 +381,6 @@
     "get_inputOutputDevices": "Get Input/Output Devices"
   },
   "tag_descriptions": {
-    "Management-events": "Management events are asynchronous events published by the reader on the management-event channel.\n\nThe `data` payload depends on the event `type`. Always read `type` before parsing `data`.\n\n## Configure Management Events\n\nManagement events use two configuration layers:\n\n| Layer | Command / Endpoint | JSON path | Purpose |\n|---|---|---|---|\n| Destination | `set_importCloudConfig` / `PUT /cloud/cloudConfig` | `endpointConfig.management.event` | Sets where management events are published. |\n| Event configuration | `set_config` / `PUT /cloud/config` | `READER-GATEWAY.managementEventConfig` | Enables events, sets thresholds, and configures heartbeat fields. |\n\nConfigure the destination first. Then configure the required event type.\n\n## Event Types\n\n| Event | `type` | Configured in |\n|---|---|---|\n| Heartbeat | `heartbeat` | `managementEventConfig.heartbeat` |\n| GPI Event | `gpi` | `managementEventConfig.gpiEvents` |\n| GPO Event | `gpo` | `managementEventConfig.gpoEvents` |\n| Custom User App Event | `userapp` | `managementEventConfig.userappEvents` |\n| Error Events | `error` | `managementEventConfig.errors` |\n| Warning Events | `warning` | `managementEventConfig.warnings` |\n| Firmware Update Progress | `firmwareUpdateProgress` | Not configurable. Published during `set_os`. |\n| Notification Event | `notification` | Not configurable. Published when display peripheral status changes (FXR60). |"
+    "Management-events": "Management events are asynchronous messages published by the reader on the management event channel.\n\n## Management Event Format\n\nAll management events share an outer JSON object called the event envelope. The Event Body below provides examples and the common schema before the individual event types are described.\n\n<!-- event-body -->\n\n### Read the Event Envelope\n\nThe envelope identifies the event and its source. Read `type` to choose the matching event schema, then interpret the fields inside `data`.\n\n| Field | Type | Description |\n|---|---|---|\n| `type` | string | Event type, such as `heartbeat`, `gpi`, or `error`. |\n| `timestamp` | string | Event timestamp with UTC offset. |\n| `component` | string | Source: `RG` (Reader Gateway), `RC` (Radio Control), or a user application name. |\n| `eventNum` | number | Management event sequence number. |\n| `data` | object | Event-specific information defined on the corresponding event page. |\n\nFor example, a GPI event has `type: \"gpi\"`; `data.pin` identifies the input pin and `data.state` reports its new state.\n\n## Configure Management Events\n\nConfigure the destination once for the management event channel, then configure the events to publish.\n\n| Setting | MQTT command / REST endpoint | JSON path |\n|---|---|---|\n| Destination | [set_importCloudConfig](set_importCloudConfig.md) / `PUT /cloud/cloudConfig` | `endpointConfig.management.event` |\n| Event settings | [set_config](set_config.md) / `PUT /cloud/config` | `READER-GATEWAY.managementEventConfig` |\n\n### Set the Destination\n\nUse `set_importCloudConfig` to configure the management event connection, including its broker and publish topic. In the command's examples, select **MQTT management events**. For example, a deployment can publish events to `factory/reader1/management-events`.\n\nThe destination belongs under `endpointConfig.management.event`; heartbeat interval and field selection belong in the separate event settings. See [Import Cloud Configuration](set_importCloudConfig.md) for the complete MQTT connection and TLS options.\n\n### Example Destination Configuration\n\nThis MQTT example uses a TCP broker connection. Replace `broker.example.com`, the client ID, and the publish topic with your deployment values. Configure TLS options as described in [Import Cloud Configuration](set_importCloudConfig.md) when your broker requires TLS.\n\n```json\n{\n  \"command\": \"set_importCloudConfig\",\n  \"command_id\": \"set-management-event-destination-1\",\n  \"payload\": {\n    \"endpointConfig\": {\n      \"management\": {\n        \"event\": {\n          \"connections\": [\n            {\n              \"name\": \"MGMT_EVENTS_MQTT\",\n              \"description\": \"Management event connection\",\n              \"type\": \"mqtt\",\n              \"options\": {\n                \"enableSecurity\": false,\n                \"endpoint\": {\n                  \"hostName\": \"broker.example.com\",\n                  \"port\": 1883,\n                  \"protocol\": \"tcp\"\n                },\n                \"additional\": {\n                  \"cleanSession\": true,\n                  \"clientId\": \"reader1-management-events\",\n                  \"debug\": false,\n                  \"keepAlive\": 60,\n                  \"qos\": 0,\n                  \"reconnectDelay\": 2,\n                  \"reconnectDelayMax\": 60\n                },\n                \"publishTopic\": [\n                  \"factory/reader1/management-events\"\n                ],\n                \"subscribeTopic\": []\n              }\n            }\n          ]\n        }\n      }\n    }\n  }\n}\n```\n\nFor `PUT /cloud/cloudConfig`, send the contents of `payload` as the request body.\n\n### Configure Event Settings\n\nUse `set_config` to select heartbeat fields and interval, enable GPIO and user application events, and set error or warning reporting options. Each event page below introduces its supported configuration fields before showing the configuration examples.\n\n## Event Types\n\n| Event | `type` | Configuration under `managementEventConfig` |\n|---|---|---|\n| [Heartbeat](heartbeat.md) | `heartbeat` | `heartbeat` |\n| [GPI Event](gpi.md) | `gpi` | `gpiEvents` |\n| [GPO Event](gpo.md) | `gpo` | `gpoEvents` |\n| [User App Event](userapp_event.md) | `userapp` | `userappEvents` |\n| [Error Events](error.md) | `error` | `errors` |\n| [Warning Events](warning.md) | `warning` | `warnings` |\n| [Firmware Update Progress](firmwareUpdateProgress.md) | `firmwareUpdateProgress` | Published during `set_os`; no enable/disable setting. |\n| [Notification Event](notification_event.md) | `notification` | Display peripheral status changes on FXR60; no enable/disable setting. |\n\nSee the [Starfish management event format](https://zebradevs.github.io/rfid-ziotc-docs/schemas/async_event_schema/index.html) for the shared IoT Connector envelope. This guide describes the FXR event examples and configuration.\n"
   }
 }

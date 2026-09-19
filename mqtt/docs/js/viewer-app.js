@@ -92,12 +92,19 @@ function isAsyncEventOp(op) {
     op.tags.indexOf('Ble-data-events') !== -1;
 }
 
+function setNavGroupIndicator(indicator, collapsed) {
+  indicator.textContent = collapsed ? '+' : '−';
+  if (indicator.tagName === 'BUTTON') {
+    indicator.setAttribute('aria-expanded', String(!collapsed));
+  }
+}
+
 function requestPayloadHeading(op) {
   return isManagementEventOp(op) ? 'Configuration Examples' : 'MQTT Command Payload';
 }
 
 function responsePayloadHeading(op) {
-  return isAsyncEventOp(op) ? 'Example Payload' : 'MQTT Response Payload';
+  return isAsyncEventOp(op) ? (op['x-event-body-title'] || 'Event Body') : 'MQTT Response Payload';
 }
 
 function splitDescriptionBeforeSection(desc, sectionTitles) {
@@ -242,7 +249,7 @@ function renderHeading(level, text, options) {
    targetLevel = Math.max(1, Math.min(6, targetLevel));
    var idAttr = '';
    /* Only ### section headings get in-page anchor IDs (avoids duplicate #### Description IDs). */
-   if (options.idPrefix && level === 3) {
+   if (options.idPrefix && (level === 3 || options.anchorAllHeadings)) {
      idAttr = ' id="' + options.idPrefix + '-' + slugify(text) + '"';
    }
    var displayText = text.replace(/^\d+\.\s+/, '');
@@ -771,12 +778,41 @@ function generatePDF(op, path) {
      });
    }
 
-   var pdfInsertConfig = isManagementEventOp(op) && op.requestBody && op.requestBody.content;
-   var pdfDescParts = pdfInsertConfig
-     ? splitDescriptionBeforeSection(op.description, ['## Parameters', '## Fields', '## Example Payload'])
-     : { before: op.description, after: '' };
-   renderDescriptionBlocks(pdfDescParts.before);
+   function renderPdfEventBody() {
+   if (op.responses) {
+     var resKey = Object.keys(op.responses)[0];
+     var res = op.responses[resKey];
+     if (res && res.content && res.content['application/json']) {
+       var rct = res.content['application/json'];
+       sectionHeading(responsePayloadHeading(op));
+       var resExObj = rct.examples || {};
+       var resExKeys = Object.keys(resExObj);
+       if (resExKeys.length) {
+         /* render every named example */
+         resExKeys.forEach(function (key) {
+           if (resExObj[key] && resExObj[key].value !== undefined) {
+             subHeading((op['x-example-title'] || 'Example') + (resExKeys.length > 1 ? ': ' + (resExObj[key].summary || key) : ''));
+             jsonBlock(resExObj[key].value);
+           }
+         });
+       } else if (rct.schema) {
+         subHeading('Example');
+         jsonBlock(generateExampleFromSchema(rct.schema));
+       }
+       if (rct.schema) schemaTablePdf(rct.schema, op['x-schema-title'] || 'Response');
+     }
+   }
 
+   }
+   var eventPrefix = op['x-event-body-position'];
+   var hasEarlyEventBody = eventPrefix && op.description.indexOf(eventPrefix) === 0;
+   if (hasEarlyEventBody) {
+     renderDescriptionBlocks(eventPrefix);
+     renderPdfEventBody();
+     renderDescriptionBlocks(op['x-event-body-after'] || '');
+   } else {
+     renderDescriptionBlocks(op.description);
+   }
    if (op.requestBody && op.requestBody.content) {
      var ct = op.requestBody.content['application/json'];
      if (ct) {
@@ -795,35 +831,11 @@ function generatePDF(op, path) {
          subHeading('Example');
          jsonBlock(generateExampleFromSchema(ct.schema));
        }
-       if (ct.schema) schemaTablePdf(ct.schema, 'Command');
+       if (ct.schema) schemaTablePdf(ct.schema, isManagementEventOp(op) ? 'Configuration' : 'Command');
      }
    }
 
-   renderDescriptionBlocks(pdfDescParts.after);
-
-   if (op.responses) {
-     var resKey = Object.keys(op.responses)[0];
-     var res = op.responses[resKey];
-     if (res && res.content && res.content['application/json']) {
-       var rct = res.content['application/json'];
-       sectionHeading(responsePayloadHeading(op));
-       var resExObj = rct.examples || {};
-       var resExKeys = Object.keys(resExObj);
-       if (resExKeys.length) {
-         /* render every named example */
-         resExKeys.forEach(function (key) {
-           if (resExObj[key] && resExObj[key].value !== undefined) {
-             subHeading(resExKeys.length > 1 ? 'Example: ' + key : 'Example');
-             jsonBlock(resExObj[key].value);
-           }
-         });
-       } else if (rct.schema) {
-         subHeading('Example');
-         jsonBlock(generateExampleFromSchema(rct.schema));
-       }
-       if (rct.schema) schemaTablePdf(rct.schema, 'Response');
-     }
-   }
+   if (!hasEarlyEventBody) renderPdfEventBody();
  
    if (op['x-error-codes'] && op['x-error-codes'].length) errorTablePdf(op['x-error-codes']);
    drawFooter();
@@ -1520,6 +1532,70 @@ function wireTopbarSearch(spec) {
 }
  
 /* ── Render operation ── */
+function renderResponseBody(id, op) {
+   var resHtml = '';
+   if (op.responses) {
+     var resKey = Object.keys(op.responses)[0];
+     var res = op.responses[resKey];
+     if (res && res.content && res.content['application/json']) {
+       var rct = res.content['application/json'];
+       var resExObj = rct.examples || {};
+       var resExKeys = Object.keys(resExObj);
+       var resSchemaHtml = rct.schema ? schemaTable(rct.schema) : '';
+
+       /* ── Auto-generate response example if missing ── */
+       var resExampleJson = '';
+       if (resExKeys.length && resExObj[resExKeys[0]].value) {
+         resExampleJson = JSON.stringify(resExObj[resExKeys[0]].value, null, 2);
+       } else if (rct.schema) {
+         var autoResExample = generateExampleFromSchema(rct.schema);
+         if (autoResExample && Object.keys(autoResExample).length) {
+           resExampleJson = JSON.stringify(autoResExample, null, 2);
+         }
+       }
+
+       resHtml = '<div class="payload-section">';
+       resHtml += '<div class="payload-heading">' + escHtml(responsePayloadHeading(op)) + '</div>';
+       if (resExampleJson || resSchemaHtml) {
+         resHtml += '<div class="tab-bar">';
+         if (resExampleJson) resHtml += '<button class="tab-btn active" data-tab="res-ex-' + id + '">Example</button>';
+         if (resSchemaHtml) resHtml += '<button class="tab-btn' + (resExampleJson ? '' : ' active') + '" data-tab="res-sc-' + id + '">Schema</button>';
+         resHtml += '</div>';
+         if (resExampleJson) {
+           resHtml += '<div class="tab-panel active" id="res-ex-' + id + '">';
+           if (op['x-example-title']) resHtml += '<h4 class="event-panel-heading">' + escHtml(op['x-example-title']) + '</h4>';
+           if (resExKeys.length) {
+             var firstResExample = resExObj[resExKeys[0]] || {};
+             var firstResDesc = typeof firstResExample.description === 'string' ? firstResExample.description : '';
+             resHtml += '<div class="example-description"' + (firstResDesc ? '' : ' style="display:none;"') + '>' + (firstResDesc ? md(firstResDesc) : '') + '</div>';
+           }
+           if (resExKeys.length > 1) {
+             var resExVals = {};
+             resExKeys.forEach(function(k){
+               resExVals[k] = {
+                 value: resExObj[k].value,
+                 description: typeof resExObj[k].description === 'string' ? resExObj[k].description : ''
+               };
+             });
+             resHtml += '<select class="example-select" data-panel="res-ex-' + id + '" data-examples="' + encodeURIComponent(JSON.stringify(resExVals)) + '">';
+             resExKeys.forEach(function(k) {
+               var resLabel = (resExObj[k] && resExObj[k].summary) ? resExObj[k].summary : formatExampleLabel(k);
+               resHtml += '<option value="' + escHtml(k) + '">' + escHtml(resLabel) + '</option>';
+             });
+             resHtml += '</select>';
+           }
+           resHtml += '<pre class="language-json"><code class="language-json">' + escHtml(resExampleJson) + '</code></pre>';
+           resHtml += '</div>';
+         }
+         if (resSchemaHtml) resHtml += '<div class="tab-panel' + (resExampleJson ? '' : ' active') + '" id="res-sc-' + id + '">' + (op['x-schema-title'] ? '<h4 class="event-panel-heading">' + escHtml(op['x-schema-title']) + '</h4>' : '') + resSchemaHtml + '</div>';
+       }
+       resHtml += '</div>';
+     }
+   }
+
+   return resHtml;
+}
+
 function renderOperation(path, method, op) {
    var summary = op.summary || path;
    var id = opIdFromPath(path);
@@ -1577,75 +1653,16 @@ function renderOperation(path, method, op) {
      }
    }
  
-   var resHtml = '';
-   if (op.responses) {
-     var resKey = Object.keys(op.responses)[0];
-     var res = op.responses[resKey];
-     if (res && res.content && res.content['application/json']) {
-       var rct = res.content['application/json'];
-       var resExObj = rct.examples || {};
-       var resExKeys = Object.keys(resExObj);
-       var resSchemaHtml = rct.schema ? schemaTable(rct.schema) : '';
- 
-       /* ── Auto-generate response example if missing ── */
-       var resExampleJson = '';
-       if (resExKeys.length && resExObj[resExKeys[0]].value) {
-         resExampleJson = JSON.stringify(resExObj[resExKeys[0]].value, null, 2);
-       } else if (rct.schema) {
-         var autoResExample = generateExampleFromSchema(rct.schema);
-         if (autoResExample && Object.keys(autoResExample).length) {
-           resExampleJson = JSON.stringify(autoResExample, null, 2);
-         }
-       }
- 
-       resHtml = '<div class="payload-section">';
-       resHtml += '<div class="payload-heading">' + escHtml(responsePayloadHeading(op)) + '</div>';
-       if (resExampleJson || resSchemaHtml) {
-         resHtml += '<div class="tab-bar">';
-         if (resExampleJson) resHtml += '<button class="tab-btn active" data-tab="res-ex-' + id + '">Example</button>';
-         if (resSchemaHtml) resHtml += '<button class="tab-btn' + (resExampleJson ? '' : ' active') + '" data-tab="res-sc-' + id + '">Schema</button>';
-         resHtml += '</div>';
-         if (resExampleJson) {
-           resHtml += '<div class="tab-panel active" id="res-ex-' + id + '">';
-           if (resExKeys.length) {
-             var firstResExample = resExObj[resExKeys[0]] || {};
-             var firstResDesc = typeof firstResExample.description === 'string' ? firstResExample.description : '';
-             resHtml += '<div class="example-description"' + (firstResDesc ? '' : ' style="display:none;"') + '>' + (firstResDesc ? md(firstResDesc) : '') + '</div>';
-           }
-           if (resExKeys.length > 1) {
-             var resExVals = {};
-             resExKeys.forEach(function(k){
-               resExVals[k] = {
-                 value: resExObj[k].value,
-                 description: typeof resExObj[k].description === 'string' ? resExObj[k].description : ''
-               };
-             });
-             resHtml += '<select class="example-select" data-panel="res-ex-' + id + '" data-examples="' + encodeURIComponent(JSON.stringify(resExVals)) + '">';
-             resExKeys.forEach(function(k) {
-               var resLabel = (resExObj[k] && resExObj[k].summary) ? resExObj[k].summary : formatExampleLabel(k);
-               resHtml += '<option value="' + escHtml(k) + '">' + escHtml(resLabel) + '</option>';
-             });
-             resHtml += '</select>';
-           }
-           resHtml += '<pre class="language-json"><code class="language-json">' + escHtml(resExampleJson) + '</code></pre>';
-           resHtml += '</div>';
-         }
-         if (resSchemaHtml) resHtml += '<div class="tab-panel' + (resExampleJson ? '' : ' active') + '" id="res-sc-' + id + '">' + resSchemaHtml + '</div>';
-       }
-       resHtml += '</div>';
-     }
-   }
+   var resHtml = renderResponseBody(id, op);
  
    var mdOptions = { idPrefix: id, headingMap: { 1: 3, 2: 3, 3: 4, 4: 5, 5: 5, 6: 5 } };
-   var insertConfigBeforeParams = isManagementEventOp(op) && !!reqHtml;
-   var descParts = insertConfigBeforeParams
-     ? splitDescriptionBeforeSection(desc, ['## Parameters', '## Fields', '## Example Payload'])
-     : { before: desc, after: '' };
    var descHtml = '';
-   if (insertConfigBeforeParams && descParts.after) {
-     if (descParts.before) descHtml += '<div class="op-description md-content">' + md(descParts.before, mdOptions) + '</div>';
-     descHtml += reqHtml;
-     descHtml += '<div class="op-description md-content">' + md(descParts.after, mdOptions) + '</div>';
+   var eventPrefix = op['x-event-body-position'];
+   if (eventPrefix && desc.indexOf(eventPrefix) === 0) {
+     var eventSuffix = op['x-event-body-after'] || '';
+     descHtml = '<div class="op-description md-content">' + md(eventPrefix, mdOptions) + '</div>' + resHtml +
+       '<div class="op-description md-content">' + md(eventSuffix, mdOptions) + '</div>' + reqHtml;
+     resHtml = '';
    } else {
      descHtml = '<div class="op-description md-content">' + md(desc, mdOptions) + '</div>' + reqHtml;
    }
@@ -1657,6 +1674,7 @@ function renderOperation(path, method, op) {
        '</div>' +
        '<button class="pdf-btn" data-op-id="' + id + '">⬇ Download PDF</button>' +
      '</div>' +
+     (id === 'tagDataEvents' ? '<span id="op-mode_tag_data_events"></span>' : '') +
      descHtml +
      resHtml +
      (op['x-error-codes'] ? errorTable(op['x-error-codes']) : '') +
@@ -1817,10 +1835,14 @@ function render(spec) {
    var groups = spec['x-tagGroups'] || [{ name: 'API', tags: Object.keys(tagMap) }];
    groups.forEach(function (group) {
      navHtml += '<div class="nav-group" data-group="' + escHtml(group.name) + '">' +
-       '<span class="nav-group-label">' + escHtml(group.name) + '</span>' +
-       '<span class="nav-group-indicator">−</span>' +
+       (group.name === 'Management Events'
+         ? '<a class="nav-group-label nav-group-link" href="#tag-management-events">' + escHtml(group.name) + '</a>' +
+           '<button class="nav-group-indicator" type="button" aria-label="Expand or collapse Management Events" aria-controls="nav-management-events" aria-expanded="true">−</button>'
+         : '<span class="nav-group-label">' + escHtml(group.name) + '</span>' +
+           '<span class="nav-group-indicator">−</span>') +
        '</div>' +
-       '<div class="nav-group-children" data-group-children="' + escHtml(group.name) + '">';
+       '<div class="nav-group-children"' + (group.name === 'Management Events' ? ' id="nav-management-events"' : '') +
+       ' data-group-children="' + escHtml(group.name) + '">';
      group.tags.forEach(function (tagName) {
        var tag = tagMap[tagName];
        if (!tag) return;
@@ -1843,7 +1865,12 @@ function render(spec) {
          html += '<h2 class="tag-heading">' + escHtml(tagLabel) + '</h2>';
        }
        if (tag.description) {
-         html += '<div class="tag-description md-content">' + md(tag.description) + '</div>';
+         var tagOptions = { idPrefix: 'tag-' + tagId, anchorAllHeadings: true };
+         var tagEventBody = (spec['x-tagEventBodies'] || {})[tagName];
+         var tagParts = tag.description.split('<!-- event-body -->');
+         html += '<div class="tag-description md-content">' + md(tagParts[0], tagOptions) + '</div>';
+         if (tagEventBody && tagParts.length > 1) html += renderResponseBody('overview-' + tagId, tagEventBody);
+         if (tagParts.length > 1) html += '<div class="tag-description md-content">' + md(tagParts.slice(1).join(''), tagOptions) + '</div>';
        }
        groupedTagOperations(tagName, tag.operations, spec).forEach(function (subgroup) {
          if (subgroup.name) {
@@ -1875,14 +1902,15 @@ function render(spec) {
        var isCollapsed = (stored === 'collapsed') || (!stored && !hasActive);
        if (isCollapsed) {
          children.classList.add('collapsed');
-         indicator.textContent = '+';
+         setNavGroupIndicator(indicator, true);
        } else {
          children.classList.remove('collapsed');
-         indicator.textContent = '−';
+         setNavGroupIndicator(indicator, false);
        }
-       group.addEventListener('click', function() {
+       var toggle = group.querySelector('button.nav-group-indicator') || group;
+       toggle.addEventListener('click', function() {
          var collapsed = children.classList.toggle('collapsed');
-         indicator.textContent = collapsed ? '+' : '−';
+         setNavGroupIndicator(indicator, collapsed);
          sessionStorage.setItem('nav-group-' + groupName, collapsed ? 'collapsed' : 'expanded');
        });
      });
@@ -1926,10 +1954,10 @@ function render(spec) {
            var stored = sessionStorage.getItem('nav-group-' + groupName);
            if (stored === 'collapsed') {
              children.classList.add('collapsed');
-             indicator.textContent = '+';
+             setNavGroupIndicator(indicator, true);
            } else {
              children.classList.remove('collapsed');
-             indicator.textContent = '−';
+             setNavGroupIndicator(indicator, false);
            }
          });
          return;
@@ -1971,18 +1999,42 @@ function render(spec) {
            children.classList.remove('collapsed');
            var groupName = children.getAttribute('data-group-children');
            var indicator = document.querySelector('.nav-group[data-group="' + groupName + '"] .nav-group-indicator');
-           if (indicator) indicator.textContent = '−';
+           if (indicator) setNavGroupIndicator(indicator, false);
          }
        });
      });
    }
  
    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+     var panelId = btn.getAttribute('data-tab');
+     var panel = document.getElementById(panelId);
+     btn.parentElement.setAttribute('role', 'tablist');
+     btn.id = 'tab-' + panelId;
+     btn.setAttribute('role', 'tab');
+     btn.setAttribute('aria-controls', panelId);
+     btn.setAttribute('aria-selected', String(btn.classList.contains('active')));
+     btn.tabIndex = btn.classList.contains('active') ? 0 : -1;
+     if (panel) {
+       panel.setAttribute('role', 'tabpanel');
+       panel.setAttribute('aria-labelledby', btn.id);
+     }
+     btn.addEventListener('keydown', function (event) {
+       if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(event.key) === -1) return;
+       event.preventDefault();
+       var tabs = Array.prototype.slice.call(btn.parentElement.querySelectorAll('.tab-btn'));
+       var index = tabs.indexOf(btn);
+       var next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 :
+         (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+       tabs[next].click();
+       tabs[next].focus();
+     });
      btn.addEventListener('click', function () {
        var tabId = btn.getAttribute('data-tab');
        var bar = btn.parentElement;
-       bar.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+       bar.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); b.tabIndex = -1; });
        btn.classList.add('active');
+       btn.setAttribute('aria-selected', 'true');
+       btn.tabIndex = 0;
        var section = bar.closest('.payload-section');
        if (section) section.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
        var target = document.getElementById(tabId);
@@ -2058,7 +2110,7 @@ function render(spec) {
        if (gEl) {
          groupChildren.classList.remove('collapsed');
          var ind = gEl.querySelector('.nav-group-indicator');
-         if (ind) ind.textContent = '−';
+         if (ind) setNavGroupIndicator(ind, false);
          sessionStorage.setItem('nav-group-' + gName, 'expanded');
        }
      }
@@ -2185,7 +2237,7 @@ function render(spec) {
            activeChildren.classList.remove('collapsed');
            if (activeGroupEl) {
              var activeIndicator = activeGroupEl.querySelector('.nav-group-indicator');
-             if (activeIndicator) activeIndicator.textContent = '−';
+             if (activeIndicator) setNavGroupIndicator(activeIndicator, false);
            }
            if (activeGroupName) sessionStorage.setItem('nav-group-' + activeGroupName, 'expanded');
          }
@@ -2227,7 +2279,7 @@ function render(spec) {
      }
      toggle.addEventListener('click', openSidebar);
      overlay.addEventListener('click', closeSidebar);
-     document.querySelectorAll('.nav-tag, .nav-op').forEach(function (link) {
+     document.querySelectorAll('.nav-tag, .nav-op, .nav-group-link').forEach(function (link) {
        link.addEventListener('click', function () {
          if (window.innerWidth <= 768) closeSidebar();
        });
