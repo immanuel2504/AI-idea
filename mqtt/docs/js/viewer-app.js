@@ -1,21 +1,28 @@
 (function() {
 'use strict';
 
+/* Keyed lower-case: spec tag names use mixed casing such as Gpio and Date&Time. */
 var CATEGORY_LABELS = {
   login: 'Login',
   system: 'System',
   network: 'Network',
-  control: 'Control Commands',
+  control: 'Control',
   region: 'Region',
   gpio: 'GPIO',
   'app-led': 'App LED',
+  'stack-led': 'Stack LED',
+  display: 'Display',
   logs: 'Logs',
   'date-time': 'Date & Time',
+  'date&time': 'Date & Time',
   certificate: 'Certificates',
   firmware: 'Firmware',
   userapp: 'User Apps',
   impinjgen2x: 'Impinj Gen2X',
-  ble: 'Bluetooth LE'
+  ble: 'Bluetooth LE',
+  'management-events': 'Management Events',
+  'tag-data-events': 'Tag Data Events',
+  'ble-data-events': 'BLE Data Events'
 };
 
 var displayNameConfig = {
@@ -68,7 +75,8 @@ function applyOperationSummaries(spec) {
 
 function formatCategoryLabel(tag) {
   if (!tag) return '';
-  if (CATEGORY_LABELS[tag]) return CATEGORY_LABELS[tag];
+  var key = String(tag).toLowerCase();
+  if (CATEGORY_LABELS[key]) return CATEGORY_LABELS[key];
   return tag.split('-').map(function (w) {
     return w.charAt(0).toUpperCase() + w.slice(1);
   }).join(' ');
@@ -97,6 +105,23 @@ function setNavGroupIndicator(indicator, collapsed) {
   if (indicator.tagName === 'BUTTON') {
     indicator.setAttribute('aria-expanded', String(!collapsed));
   }
+}
+
+/* Reveal the nav entry for a target id, expanding its group when collapsed. */
+function expandNavGroupFor(targetId) {
+  var link = document.querySelector('.nav-op[href="#' + targetId + '"], .nav-tag[href="#' + targetId + '"]');
+  if (!link) return;
+  var children = link.parentElement;
+  while (children && !(children.classList && children.classList.contains('nav-group-children'))) {
+    children = children.parentElement;
+  }
+  if (!children || !children.classList.contains('collapsed')) return;
+  children.classList.remove('collapsed');
+  var groupName = children.getAttribute('data-group-children');
+  var group = groupName ? document.querySelector('.nav-group[data-group="' + groupName + '"]') : null;
+  var indicator = group ? group.querySelector('.nav-group-indicator') : null;
+  if (indicator) setNavGroupIndicator(indicator, false);
+  if (groupName) sessionStorage.setItem('nav-group-' + groupName, 'expanded');
 }
 
 function requestPayloadHeading(op) {
@@ -1301,7 +1326,8 @@ function wireTopbarSearch(spec) {
          description: description,
          descriptionLower: description.toLowerCase(),
          text: text,
-         isTag: false
+         isTag: false,
+         isEvent: isAsyncEventOp(op)
        });
      });
    });
@@ -1342,7 +1368,13 @@ function wireTopbarSearch(spec) {
  
    function buildSnippet(text, q) {
      if (!text) return '';
-     var clean = stripMarkdown(text).replace(/\s+/g, ' ').trim();
+     /* Several descriptions embed whole JSON schemas in fenced blocks. Those make
+        unreadable previews, so summarise from the prose only. */
+     var prose = String(text)
+       .replace(/```[\s\S]*?```/g, ' ')
+       .replace(/^#{1,6}[^\n]*$/gm, ' ');
+     var clean = stripMarkdown(prose).replace(/\s+/g, ' ').trim();
+     if (!clean) clean = stripMarkdown(String(text)).replace(/\s+/g, ' ').trim();
      if (!clean) return '';
      var query = normalizeQuery(q);
      if (!query) {
@@ -1440,8 +1472,9 @@ function wireTopbarSearch(spec) {
        row.className = 'topbar-search-item';
        row.setAttribute('role', 'option');
        var badge = document.createElement('span');
-       badge.className = item.isTag ? 'topbar-search-badge tag' : 'topbar-search-badge op';
-       badge.textContent = item.isTag ? 'CAT' : 'CMD';
+       var badgeKind = item.isTag ? 'tag' : (item.isEvent ? 'event' : 'op');
+       badge.className = 'topbar-search-badge ' + badgeKind;
+       badge.textContent = item.isTag ? 'CAT' : (item.isEvent ? 'EVENT' : 'CMD');
        var body = document.createElement('span');
        body.className = 'topbar-search-body';
        var label = document.createElement('span');
@@ -1483,11 +1516,16 @@ function wireTopbarSearch(spec) {
      var targetId = item.isTag ? 'tag-' + item.id : 'op-' + item.id;
      var target = document.getElementById(targetId);
      if (target) {
+       expandNavGroupFor(targetId);
        var topbarH = document.getElementById('topbar') ? document.getElementById('topbar').offsetHeight : 52;
        var top = target.getBoundingClientRect().top + window.pageYOffset - topbarH - 12;
        window.scrollTo({ top: top, behavior: 'smooth' });
+       /* Drop the match highlights from the typed query; keep only the opened one. */
+       clearHighlights();
        target.classList.add('search-highlight');
        setTimeout(function () { target.classList.remove('search-highlight'); }, 2200);
+       /* Keep the address bar in step so the page can be linked or bookmarked. */
+       if (window.history && history.replaceState) history.replaceState(null, '', '#' + targetId);
      }
      dropdown.style.display = 'none';
      input.value = item.summary;
@@ -1655,7 +1693,8 @@ function renderOperation(path, method, op) {
  
    var resHtml = renderResponseBody(id, op);
  
-   var mdOptions = { idPrefix: id, headingMap: { 1: 3, 2: 3, 3: 4, 4: 5, 5: 5, 6: 5 } };
+   /* The operation title is an h3, so its body headings start at h4. */
+   var mdOptions = { idPrefix: id, headingMap: { 1: 4, 2: 4, 3: 5, 4: 6, 5: 6, 6: 6 } };
    var descHtml = '';
    var eventPrefix = op['x-event-body-position'];
    if (eventPrefix && desc.indexOf(eventPrefix) === 0) {
@@ -1865,7 +1904,12 @@ function render(spec) {
          html += '<h2 class="tag-heading">' + escHtml(tagLabel) + '</h2>';
        }
        if (tag.description) {
-         var tagOptions = { idPrefix: 'tag-' + tagId, anchorAllHeadings: true };
+         /* The tag heading is an h2, so its body headings start at h3. */
+         var tagOptions = {
+           idPrefix: 'tag-' + tagId,
+           anchorAllHeadings: true,
+           headingMap: { 1: 3, 2: 3, 3: 4, 4: 5, 5: 6, 6: 6 }
+         };
          var tagEventBody = (spec['x-tagEventBodies'] || {})[tagName];
          var tagParts = tag.description.split('<!-- event-body -->');
          html += '<div class="tag-description md-content">' + md(tagParts[0], tagOptions) + '</div>';
@@ -1934,6 +1978,35 @@ function render(spec) {
      });
    });
  
+   /* Hide group headers with nothing under them while filtering, and explain an
+      empty result instead of leaving a blank sidebar. */
+   function updateNavFilterChrome(query) {
+     var anyVisible = false;
+     document.querySelectorAll('.nav-group-children').forEach(function (children) {
+       var hasVisible = Array.prototype.slice.call(children.querySelectorAll('.nav-op, .nav-tag'))
+         .some(function (el) { return el.style.display !== 'none'; });
+       if (hasVisible) anyVisible = true;
+       var groupName = children.getAttribute('data-group-children');
+       var group = groupName ? nav.querySelector('.nav-group[data-group="' + groupName + '"]') : null;
+       var hide = !!query && !hasVisible;
+       if (group) group.style.display = hide ? 'none' : '';
+       children.style.display = hide ? 'none' : '';
+     });
+     var empty = document.getElementById('nav-empty');
+     if (query && !anyVisible) {
+       if (!empty) {
+         empty = document.createElement('div');
+         empty.id = 'nav-empty';
+         empty.className = 'nav-empty';
+         nav.appendChild(empty);
+       }
+       empty.innerHTML = 'No navigation matches <strong>' + escHtml(query) + '</strong>.<br>' +
+         'Try the search box in the header to look inside command details.';
+     } else if (empty && empty.parentNode) {
+       empty.parentNode.removeChild(empty);
+     }
+   }
+
    if (searchInput && !searchInput.getAttribute('data-wired')) {
      searchInput.setAttribute('data-wired', '1');
      searchInput.addEventListener('input', function () {
@@ -1960,6 +2033,7 @@ function render(spec) {
              setNavGroupIndicator(indicator, false);
            }
          });
+         updateNavFilterChrome('');
          return;
        }
        var opMatchByTag = {};
@@ -2002,6 +2076,7 @@ function render(spec) {
            if (indicator) setNavGroupIndicator(indicator, false);
          }
        });
+       updateNavFilterChrome(q);
      });
    }
  
@@ -2097,6 +2172,8 @@ function render(spec) {
    document.addEventListener('click', function (e) {
      var anchor = e.target.closest('a[href^="#"]');
      if (!anchor) return;
+     /* The skip link needs the browser's native focus move, not a smooth scroll. */
+     if (anchor.classList.contains('skip-link')) return;
      var id = anchor.getAttribute('href').slice(1);
      var target = document.getElementById(id);
      if (!target) return;
@@ -2257,9 +2334,30 @@ function render(spec) {
      revealActiveNavLink(activeNavLink);
    }
  
+   /* Content is rendered well after load, so the browser has already given up on
+      jumping to the hash target by the time it exists. Do the jump here, and
+      repeat it on back/forward. */
+   function goToHash(behavior) {
+     var id = '';
+     try { id = decodeURIComponent((location.hash || '').slice(1)); } catch (err) { id = (location.hash || '').slice(1); }
+     if (!id) return;
+     var target = document.getElementById(id);
+     if (!target) return;
+     expandNavGroupFor(id);
+     requestAnimationFrame(function () {
+       var top = target.getBoundingClientRect().top + window.pageYOffset - TOPBAR_H - 8;
+       window.scrollTo({ top: top, behavior: behavior || 'auto' });
+       updateActiveNavState();
+     });
+   }
+
    window.addEventListener('scroll', updateActiveNavState);
-   window.addEventListener('hashchange', updateActiveNavState);
+   window.addEventListener('hashchange', function () {
+     goToHash('smooth');
+     updateActiveNavState();
+   });
    updateActiveNavState();
+   goToHash('auto');
  
    /* ── FIX 11 — Wire mobile sidebar ── */
    (function wireMobileSidebar() {
@@ -2267,22 +2365,43 @@ function render(spec) {
      var overlay = document.getElementById('sidebar-overlay');
      var sidebar = document.getElementById('sidebar');
      if (!toggle || !overlay || !sidebar) return;
-     function openSidebar() {
-       sidebar.classList.add('open');
-       overlay.classList.add('visible');
-       document.body.style.overflow = 'hidden';
+     if (toggle.getAttribute('data-wired')) return;
+     toggle.setAttribute('data-wired', '1');
+     toggle.setAttribute('aria-controls', 'sidebar');
+     function setState(open) {
+       sidebar.classList.toggle('open', open);
+       overlay.classList.toggle('visible', open);
+       /* html is the scrolling element here, so lock both. */
+       document.documentElement.style.overflow = open ? 'hidden' : '';
+       document.body.style.overflow = open ? 'hidden' : '';
+       toggle.setAttribute('aria-expanded', String(open));
+       toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
      }
      function closeSidebar() {
-       sidebar.classList.remove('open');
-       overlay.classList.remove('visible');
-       document.body.style.overflow = '';
+       if (!sidebar.classList.contains('open')) return;
+       setState(false);
+       toggle.focus();
      }
-     toggle.addEventListener('click', openSidebar);
+     setState(false);
+     toggle.addEventListener('click', function () {
+       var willOpen = !sidebar.classList.contains('open');
+       setState(willOpen);
+       if (willOpen) {
+         var search = document.getElementById('sidebar-search');
+         if (search) search.focus();
+       }
+     });
      overlay.addEventListener('click', closeSidebar);
-     document.querySelectorAll('.nav-tag, .nav-op, .nav-group-link').forEach(function (link) {
+     document.addEventListener('keydown', function (e) {
+       if (e.key === 'Escape') closeSidebar();
+     });
+     document.querySelectorAll('.nav-tag, .nav-op, .nav-section, .nav-group-link').forEach(function (link) {
        link.addEventListener('click', function () {
-         if (window.innerWidth <= 768) closeSidebar();
+         if (window.innerWidth <= 768) setState(false);
        });
+     });
+     window.addEventListener('resize', function () {
+       if (window.innerWidth > 768) setState(false);
      });
    })();
 
