@@ -13417,13 +13417,13 @@ components:
                           description: Resource usage percentage (0-100) above which a user app error is reported.
                 gpiEvents:
                   type: boolean
-                  description: Enable publishing of GPI (General Purpose Input) state change events to the management channel.
+                  description: Enable publishing of GPI (General Purpose Input) state change events to the management event channel.
                 gpoEvents:
                   type: boolean
-                  description: Enable publishing of GPO (General Purpose Output) state change events to the management channel.
+                  description: Enable publishing of GPO (General Purpose Output) state change events to the management event channel.
                 heartbeat:
                   type: object
-                  description: Heartbeat event configuration. The reader publishes periodic status heartbeats to the management channel.
+                  description: Heartbeat event configuration. The reader publishes periodic status heartbeats to the management event channel.
                   properties:
                     fields:
                       type: object
@@ -13458,7 +13458,7 @@ components:
                       description: Heartbeat publish interval in seconds. Set to 0 to disable heartbeat.
                 userappEvents:
                   type: boolean
-                  description: Enable publishing of user application lifecycle events (start, stop, crash) to the management channel.
+                  description: Enable publishing of user application lifecycle events (start, stop, crash) to the management event channel.
                 warnings:
                   type: object
                   description: Warning event reporting configuration per subsystem.
