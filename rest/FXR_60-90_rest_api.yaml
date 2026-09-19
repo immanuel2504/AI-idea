@@ -2340,7 +2340,7 @@ paths:
       tags:
       - Control
       summary: Start RFID Inventory or BLE scan
-      description: "## 1. Description\n\nThe `PUT /cloud/start` REST endpoint starts RFID inventory, BLE scanning, or both on the reader.\n\nBy default, an empty request body **starts RFID inventory only**. BLE does **not** autostart — you must include `scanType` with `\"ble\"` (and configure BLE first) to start BLE scanning.\n\n## 2. Endpoint Details\n\n| Property | Value |\n|---|---|\n| MQTT Command | `start` |\n| Pattern Name | Scan Control - Start |\n| REST Endpoint | `PUT /cloud/start` |\n| Communication Type | Client to Device (HTTP request/response) |\n| Applies To | FXR60 / FXR90 |\n| Authentication | Bearer token (`Authorization: Bearer <token>`) |\n| Content-Type | `application/json` |\n| Supported flags | `scanType`, `applyImpinjGen2X`, `doNotPersistState` |\n| Firmware Requirement | BLE requires reader build **4.0.11** or later. On earlier builds the `scanType` field is not available. |\n\n## 3. Supported flags (summary)\n\n| Flag | Type | Purpose |\n|---|---|---|\n| `scanType` | array **or** object (MQTT targeted) | Choose which scan types to start — globally or per data endpoint |\n| `applyImpinjGen2X` | boolean | Apply the Gen2X configuration saved with `PUT /cloud/impinjGen2X` when RFID inventory starts |\n| `doNotPersistState` | boolean | Control RFID auto-resume after reboot (RFID only) |\n\n## 4. Before You Begin\n\n| What You Need | Details |\n|---|---|\n| Bearer token | Include a valid bearer token in the `Authorization` header (`Authorization: Bearer <token>`). |\n| RFID mode | Configure the operating mode with `PUT /cloud/mode` before starting RFID, or use the reader default. |\n| BLE (optional) | To start BLE, configure `PUT /cloud/bleConfig` first with `ble.enable: true`, then include `\"ble\"` in `scanType`. |\n| Gen2X (optional) | To apply Gen2X on start, save the configuration with `PUT /cloud/impinjGen2X` and send `applyImpinjGen2X: true`. Cannot combine with BLE-only start. |\n\n## 5. `scanType`\n\nControls which scan types start. Omit `scanType` for RFID-only (default).\n\n### Global start (REST and MQTT)\n\n`scanType` is an **array** of `\"ble\"` and/or `\"rfid\"`. The array must be non-empty and must not contain duplicates.\n\n```json\n{ \"scanType\": [\"ble\"] }\n```\n\n| Request body | Behavior |\n|---|---|\n| omitted / `{}` | Starts **RFID inventory only** (default). BLE is not started. |\n| `[\"rfid\"]` | Starts RFID inventory only. |\n| `[\"ble\"]` | Starts BLE scanning only. Requires BLE to be enabled in `PUT /cloud/bleConfig`. |\n| `[\"ble\", \"rfid\"]` | Starts both. |\n\n**Firmware requirement:** BLE scanning — and with it the `scanType` field — is available from reader build **4.0.11** onward. On builds older than 4.0.11, omit `scanType`; `PUT /cloud/start` starts RFID inventory only. Check the installed build with `GET /cloud/version` (`readerApplication`).\n\n### Targeted start (MQTT only)\n\nWhen multiple data endpoints are configured, MQTT accepts `scanType` as an **object** that maps each data-endpoint connection name to the scan types to start on that endpoint:\n\n```json\n{\n  \"scanType\": {\n    \"dataEndpoint1\": [\"ble\", \"rfid\"],\n    \"dataEndpoint2\": [\"rfid\"]\n  }\n}\n```\n\nEach key is a connection `name` from `endpointConfig.data.event.connections`. Each value is an array of `\"ble\"` and/or `\"rfid\"` for that endpoint only.\n\n## 6. `applyImpinjGen2X`\n\nSeparate from `scanType`. Send `applyImpinjGen2X: true` to apply the Gen2X features saved with `PUT /cloud/impinjGen2X` when RFID inventory starts.\n\n| Value | Behavior |\n|---|---|\n| omitted / `false` | Start without applying Gen2X. A saved Gen2X config is ignored until this flag is true. |\n| `true` | Apply the saved Gen2X config on **this** start only. After `PUT /cloud/stop`, send `true` again — activation does not persist across inventory sessions. Cannot be combined with `scanType: [\"ble\"]`. |\n\n```json\n{ \"applyImpinjGen2X\": true }\n```\n\n## 7. Persistence across reboots (`doNotPersistState`)\n\n`doNotPersistState` applies to **RFID only**. BLE never auto-resumes after reboot.\n\n| `doNotPersistState`\
+      description: "## 1. Description\n\nThe `PUT /cloud/start` REST endpoint starts RFID inventory, BLE scanning, or both on the reader.\n\nBy default, an empty request body **starts RFID inventory only**. BLE does **not** autostart — you must include `scanType` with `\"ble\"` (and configure BLE first) to start BLE scanning.\n\n## 2. Endpoint Details\n\n| Property | Value |\n|---|---|\n| MQTT Command | `start` |\n| Pattern Name | Scan Control - Start |\n| REST Endpoint | `PUT /cloud/start` |\n| Communication Type | Client to Device (HTTP request/response) |\n| Applies To | FXR60 / FXR90 |\n| Authentication | Bearer token (`Authorization: Bearer <token>`) |\n| Content-Type | `application/json` |\n| Supported flags | `scanType`, `applyImpinjGen2X`, `doNotPersistState` |\n| Firmware Requirement | BLE requires reader build **4.0.11** or later. On earlier builds the `scanType` field is not available. |\n\n## 3. Supported flags (summary)\n\n| Flag | Type | Purpose |\n|---|---|---|\n| `scanType` | array **or** object | Choose which scan types to start — globally or per data endpoint |\n| `applyImpinjGen2X` | boolean | Apply the Gen2X configuration saved with `PUT /cloud/impinjGen2X` when RFID inventory starts |\n| `doNotPersistState` | boolean | Control RFID auto-resume after reboot (RFID only) |\n\n## 4. Before You Begin\n\n| What You Need | Details |\n|---|---|\n| Bearer token | Include a valid bearer token in the `Authorization` header (`Authorization: Bearer <token>`). |\n| RFID mode | Configure the operating mode with `PUT /cloud/mode` before starting RFID, or use the reader default. |\n| BLE (optional) | To start BLE, configure `PUT /cloud/bleConfig` first with `ble.enable: true`, then include `\"ble\"` in `scanType`. |\n| Gen2X (optional) | To apply Gen2X on start, save the configuration with `PUT /cloud/impinjGen2X` and send `applyImpinjGen2X: true`. Cannot combine with BLE-only start. |\n\n## 5. `scanType`\n\nControls which scan types start. Omit `scanType` for RFID-only (default).\n\n### Global start (REST and MQTT)\n\n`scanType` is an **array** of `\"ble\"` and/or `\"rfid\"`. The array must be non-empty and must not contain duplicates.\n\n```json\n{ \"scanType\": [\"ble\"] }\n```\n\n| Request body | Behavior |\n|---|---|\n| omitted / `{}` | Starts **RFID inventory only** (default). BLE is not started. |\n| `[\"rfid\"]` | Starts RFID inventory only. |\n| `[\"ble\"]` | Starts BLE scanning only. Requires BLE to be enabled in `PUT /cloud/bleConfig`. |\n| `[\"ble\", \"rfid\"]` | Starts both. |\n\n**Firmware requirement:** BLE scanning — and with it the `scanType` field — is available from reader build **4.0.11** onward. On builds older than 4.0.11, omit `scanType`; `PUT /cloud/start` starts RFID inventory only. Check the installed build with `GET /cloud/version` (`readerApplication`).\n\n### Targeted start (REST and MQTT)\n\nWhen multiple data endpoints are configured, REST and MQTT accept `scanType` as an **object** that maps each data-endpoint connection name to the scan types to start on that endpoint:\n\n```json\n{\n  \"scanType\": {\n    \"dataEndpoint1\": [\"ble\", \"rfid\"],\n    \"dataEndpoint2\": [\"rfid\"]\n  }\n}\n```\n\nEach key is a connection `name` from `endpointConfig.data.event.connections`. Each value is an array of `\"ble\"` and/or `\"rfid\"` for that endpoint only.\n\n## 6. `applyImpinjGen2X`\n\nSeparate from `scanType`. Send `applyImpinjGen2X: true` to apply the Gen2X features saved with `PUT /cloud/impinjGen2X` when RFID inventory starts.\n\n| Value | Behavior |\n|---|---|\n| omitted / `false` | Start without applying Gen2X. A saved Gen2X config is ignored until this flag is true. |\n| `true` | Apply the saved Gen2X config on **this** start only. After `PUT /cloud/stop`, send `true` again — activation does not persist across inventory sessions. Cannot be combined with `scanType: [\"ble\"]`. |\n\n```json\n{ \"applyImpinjGen2X\": true }\n```\n\n## 7. Persistence across reboots (`doNotPersistState`)\n\n`doNotPersistState` applies to **RFID only**. BLE never auto-resumes after reboot.\n\n| `doNotPersistState`\
         \ | Behavior on reboot or reconnect |\n|---|---|\n| `false` (default) | The reader remembers the running RFID inventory state and automatically resumes it. |\n| `true` | The running state is not saved. The reader stays idle until `PUT /cloud/start` is called again. |\n\nUse `doNotPersistState: true` for one-time or debugging sessions where automatic resume after reboot is not desired.\n"
       operationId: startInventory
       requestBody:
@@ -2376,6 +2376,15 @@ paths:
                 value:
                   scanType:
                   - rfid
+              start_Targeted:
+                summary: Targeted start per data endpoint
+                value:
+                  scanType:
+                    dataEndpoint1:
+                    - ble
+                    - rfid
+                    dataEndpoint2:
+                    - rfid
       responses:
         "200":
           description: OK
@@ -2386,7 +2395,7 @@ paths:
       tags:
       - Control
       summary: Stop RFID Inventory or BLE scan
-      description: "## 1. Description\n\nThe `PUT /cloud/stop` REST endpoint stops RFID inventory, BLE scanning, or both.\n\nBy default, if the request body is empty or `scanType` is not provided, the reader stops **RFID inventory only**.\n\n## 2. Endpoint Details\n\n| Property | Value |\n|---|---|\n| MQTT Command | `stop` |\n| Pattern Name | Scan Control - Stop |\n| REST Endpoint | `PUT /cloud/stop` |\n| Communication Type | Client to Device (HTTP request/response) |\n| Applies To | FXR60 / FXR90 |\n| Authentication | Bearer token (`Authorization: Bearer <token>`) |\n| Content-Type | `application/json` |\n| Request fields | `scanType` (array or MQTT targeted object) |\n| Firmware Requirement | BLE requires reader build **4.0.11** or later. On earlier builds the `scanType` field is not available. |\n\n## 3. Supported flags (summary)\n\n| Flag | Type | Purpose |\n|---|---|---|\n| `scanType` | array **or** object (MQTT targeted) | Choose which scan types to stop — globally or per data endpoint |\n\n## 4. Global stop (REST and MQTT)\n\nOmit `scanType` to stop RFID only (default).\n\n`scanType` as an **array** selects which scan types to stop globally. The array must be non-empty and must not contain duplicates.\n\n```json\n{ \"scanType\": [\"ble\"] }\n```\n\n| Request body | Result |\n|---|---|\n| `{}` | Stops RFID inventory only. This is the default behavior. |\n| `{ \"scanType\": [\"rfid\"] }` | Stops RFID inventory. BLE scanning continues if active. |\n| `{ \"scanType\": [\"ble\"] }` | Stops BLE scanning. RFID inventory continues if active. |\n| `{ \"scanType\": [\"ble\", \"rfid\"] }` | Stops both. |\n\nStop is **not** a no-op. Stopping a scan type that is not running returns **422** (`No scan is currently active`). Check `GET /cloud/status` first if you are not sure what is running.\n\n**Firmware requirement:** BLE scanning — and with it the `scanType` field — is available from reader build **4.0.11** onward. On builds older than 4.0.11, send an empty body `{}`, which stops RFID inventory. Check the installed build with `GET /cloud/version` (`readerApplication`).\n\n## 5. Targeted stop (MQTT only)\n\nWhen multiple data endpoints are configured, MQTT accepts `scanType` as an **object** that maps each data-endpoint connection name to the scan types to stop on that endpoint:\n\n```json\n{\n  \"scanType\": {\n    \"dataEndpoint1\": [\"ble\", \"rfid\"],\n    \"dataEndpoint2\": [\"rfid\"]\n  }\n}\n```\n\nEach key is a connection `name` from `endpointConfig.data.event.connections`. Each value is an array of `\"ble\"` and/or `\"rfid\"` to stop for that endpoint only. Endpoints omitted from the object are not affected.\n\n## 6. Before You Begin\n\n| What You Need | Details |\n|---|---|\n| Current activity | Check `GET /cloud/status` if you need to confirm RFID or BLE activity before stopping. |\n| Stop scope | Choose global array form, or MQTT targeted object form when stopping per data endpoint. |\n"
+      description: "## 1. Description\n\nThe `PUT /cloud/stop` REST endpoint stops RFID inventory, BLE scanning, or both.\n\nBy default, if the request body is empty or `scanType` is not provided, the reader stops **RFID inventory only**.\n\n## 2. Endpoint Details\n\n| Property | Value |\n|---|---|\n| MQTT Command | `stop` |\n| Pattern Name | Scan Control - Stop |\n| REST Endpoint | `PUT /cloud/stop` |\n| Communication Type | Client to Device (HTTP request/response) |\n| Applies To | FXR60 / FXR90 |\n| Authentication | Bearer token (`Authorization: Bearer <token>`) |\n| Content-Type | `application/json` |\n| Request fields | `scanType` (array or object) |\n| Firmware Requirement | BLE requires reader build **4.0.11** or later. On earlier builds the `scanType` field is not available. |\n\n## 3. Supported flags (summary)\n\n| Flag | Type | Purpose |\n|---|---|---|\n| `scanType` | array **or** object | Choose which scan types to stop — globally or per data endpoint |\n\n## 4. Global stop (REST and MQTT)\n\nOmit `scanType` to stop RFID only (default).\n\n`scanType` as an **array** selects which scan types to stop globally. The array must be non-empty and must not contain duplicates.\n\n```json\n{ \"scanType\": [\"ble\"] }\n```\n\n| Request body | Result |\n|---|---|\n| `{}` | Stops RFID inventory only. This is the default behavior. |\n| `{ \"scanType\": [\"rfid\"] }` | Stops RFID inventory. BLE scanning continues if active. |\n| `{ \"scanType\": [\"ble\"] }` | Stops BLE scanning. RFID inventory continues if active. |\n| `{ \"scanType\": [\"ble\", \"rfid\"] }` | Stops both. |\n\nStop is **not** a no-op. Stopping a scan type that is not running returns **422** (`No scan is currently active`). Check `GET /cloud/status` first if you are not sure what is running.\n\n**Firmware requirement:** BLE scanning — and with it the `scanType` field — is available from reader build **4.0.11** onward. On builds older than 4.0.11, send an empty body `{}`, which stops RFID inventory. Check the installed build with `GET /cloud/version` (`readerApplication`).\n\n## 5. Targeted stop (REST and MQTT)\n\nWhen multiple data endpoints are configured, REST and MQTT accept `scanType` as an **object** that maps each data-endpoint connection name to the scan types to stop on that endpoint:\n\n```json\n{\n  \"scanType\": {\n    \"dataEndpoint1\": [\"ble\", \"rfid\"],\n    \"dataEndpoint2\": [\"rfid\"]\n  }\n}\n```\n\nEach key is a connection `name` from `endpointConfig.data.event.connections`. Each value is an array of `\"ble\"` and/or `\"rfid\"` to stop for that endpoint only. Endpoints omitted from the object are not affected.\n\n## 6. Before You Begin\n\n| What You Need | Details |\n|---|---|\n| Current activity | Check `GET /cloud/status` if you need to confirm RFID or BLE activity before stopping. |\n| Stop scope | Choose global array form, or targeted object form when stopping per data endpoint. |\n"
       operationId: stopInventory
       requestBody:
         content:
@@ -2413,6 +2422,15 @@ paths:
                 value:
                   scanType:
                   - rfid
+              stop_Targeted:
+                summary: Targeted stop per data endpoint
+                value:
+                  scanType:
+                    dataEndpoint1:
+                    - ble
+                    - rfid
+                    dataEndpoint2:
+                    - rfid
       responses:
         "200":
           description: OK
@@ -12485,15 +12503,27 @@ components:
       type: object
       properties:
         scanType:
-          type: array
-          description: Which scan types to start. Omit for RFID-only (default).
-          items:
-            type: string
-            enum:
-            - ble
-            - rfid
-          minItems: 1
-          uniqueItems: true
+          oneOf:
+          - type: array
+            description: Scan types to start across all configured data endpoints. Omit for RFID-only (default).
+            items:
+              type: string
+              enum:
+              - ble
+              - rfid
+            minItems: 1
+            uniqueItems: true
+          - type: object
+            description: Scan types to start for each configured data endpoint. Keys are data-endpoint connection names.
+            additionalProperties:
+              type: array
+              items:
+                type: string
+                enum:
+                - ble
+                - rfid
+              minItems: 1
+              uniqueItems: true
         doNotPersistState:
           type: boolean
           description: Controls whether the started inventory state is persisted across reboot. If `true`, the state is not persisted and auto-start is not enabled after reboot. If `false`, the state is persisted across reboot, enabling auto-start.
@@ -12504,15 +12534,27 @@ components:
       type: object
       properties:
         scanType:
-          type: array
-          description: Which scan types to stop. Omit for RFID-only (default).
-          items:
-            type: string
-            enum:
-            - ble
-            - rfid
-          minItems: 1
-          uniqueItems: true
+          oneOf:
+          - type: array
+            description: Scan types to stop across all configured data endpoints. Omit for RFID-only (default).
+            items:
+              type: string
+              enum:
+              - ble
+              - rfid
+            minItems: 1
+            uniqueItems: true
+          - type: object
+            description: Scan types to stop for each configured data endpoint. Keys are data-endpoint connection names.
+            additionalProperties:
+              type: array
+              items:
+                type: string
+                enum:
+                - ble
+                - rfid
+              minItems: 1
+              uniqueItems: true
     GetVersionResponse:
       type: object
       properties:
