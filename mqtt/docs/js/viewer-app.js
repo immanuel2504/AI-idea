@@ -109,7 +109,7 @@ function setNavGroupIndicator(indicator, collapsed) {
 
 /* Reveal the nav entry for a target id, expanding its group when collapsed. */
 function expandNavGroupFor(targetId) {
-  var link = document.querySelector('.nav-op[href="#' + targetId + '"], .nav-tag[href="#' + targetId + '"]');
+  var link = document.querySelector('.nav-op[href="#' + targetId + '"], .nav-tag[href="#' + targetId + '"], .nav-subgroup-link[href="#' + targetId + '"]');
   if (!link) return;
   var children = link.parentElement;
   while (children && !(children.classList && children.classList.contains('nav-group-children'))) {
@@ -147,6 +147,106 @@ function splitDescriptionBeforeSection(desc, sectionTitles) {
     before: normalized.slice(0, splitAt).trim(),
     after: normalized.slice(splitAt).trim()
   };
+}
+
+/* Event operations describe configuration before the published event.
+ * Keep generated request examples with that configuration text. */
+function splitDescriptionAtPublishedSection(desc) {
+  if (!desc) return { before: '', after: '' };
+  var normalized = desc.replace(/\r\n?/g, '\n');
+  var publishedHeading = normalized.match(/^###\s+Published[^\n]*$/m);
+  if (!publishedHeading) return { before: normalized, after: '' };
+  return {
+    before: normalized.slice(0, publishedHeading.index).trim(),
+    after: normalized.slice(publishedHeading.index).trim()
+  };
+}
+
+function splitDescriptionAtConfigureSection(desc) {
+  if (!desc) return { before: '', after: '' };
+  var normalized = desc.replace(/\r\n?/g, '\n');
+  var configureHeading = normalized.match(/^###\s+Configure[^\n]*$/m);
+  if (!configureHeading) return { before: normalized, after: '' };
+  return {
+    before: normalized.slice(0, configureHeading.index).trim(),
+    after: normalized.slice(configureHeading.index).trim()
+  };
+}
+
+function splitMarkdownByHeadingLevel(text, level) {
+  var normalized = String(text || '').replace(/\r\n?/g, '\n');
+  var lines = normalized.split('\n');
+  var headingPattern = new RegExp('^#{' + level + '}\\s+');
+  var introLines = [];
+  var sections = [];
+  var currentSection = null;
+  var inCodeFence = false;
+
+  lines.forEach(function (line) {
+    if (/^```/.test(line.trim())) {
+      inCodeFence = !inCodeFence;
+    }
+    if (!inCodeFence && headingPattern.test(line)) {
+      if (currentSection) sections.push(currentSection.join('\n').trim());
+      currentSection = [line];
+      return;
+    }
+    if (currentSection) currentSection.push(line);
+    else introLines.push(line);
+  });
+
+  if (currentSection) sections.push(currentSection.join('\n').trim());
+  return {
+    intro: introLines.join('\n').trim(),
+    sections: sections.filter(function (section) { return !!section; })
+  };
+}
+
+function normalizeComparableHeading(value) {
+  return String(value || '')
+    .replace(/`/g, '')
+    .replace(/[()]/g, ' ')
+    .replace(/[_-]/g, ' ')
+    .toLowerCase()
+    .replace(/\bheartbeats\b/g, 'heartbeat')
+    .replace(/\bevents\b/g, 'event')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* The operation and tag title already provide the page heading. Remove only a
+ * matching leading Markdown heading so unrelated headings such as
+ * "Description" or "Configure reader_gateway" remain intact. */
+function stripLeadingDuplicateHeading(description, title) {
+  var normalized = String(description || '').replace(/\r\n?/g, '\n');
+  var match = normalized.match(/^\s*#{1,6}\s+([^\n]+)\n(?:\s*\n)?/);
+  if (!match) return normalized;
+  var headingKey = normalizeComparableHeading(match[1]);
+  var titleKey = normalizeComparableHeading(title);
+  var isDuplicate = headingKey && titleKey && (
+    headingKey === titleKey ||
+    (headingKey.length >= 5 && titleKey.indexOf(headingKey) !== -1) ||
+    (titleKey.length >= 5 && headingKey.indexOf(titleKey) !== -1)
+  );
+  return isDuplicate ? normalized.slice(match[0].length) : normalized;
+}
+
+function renderOperationDescription(description, options) {
+  if (!description) return '';
+  var grouped = splitMarkdownByHeadingLevel(description, 2);
+  if (!grouped.sections.length) {
+    return '<div class="op-description md-content">' + md(description, options) + '</div>';
+  }
+
+  var html = grouped.intro
+    ? '<div class="op-description md-content operation-intro">' + md(grouped.intro, options) + '</div>'
+    : '';
+  grouped.sections.forEach(function (section) {
+    html += '<section class="operation-doc-section">' +
+      '<div class="op-description md-content">' + md(section, options) + '</div>' +
+    '</section>';
+  });
+  return html;
 }
 
 function md(text, options) {
@@ -192,15 +292,18 @@ function normalizeMarkdownHref(href) {
 function formatInline(text) {
    if (!text) return '';
    return text
-     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-     .replace(/`([^`]+)`/g, '<code>$1</code>')
      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, href) {
        var normalizedHref = normalizeMarkdownHref(href);
        var isExternal = !/^#/.test(normalizedHref);
        var attrs = isExternal ? ' target="_blank" rel="noopener"' : '';
        var linkClass = 'md-link ' + (isExternal ? 'md-link-external' : 'md-link-internal');
-       return '<a class="' + linkClass + '" href="' + escHtml(normalizedHref) + '"' + attrs + '>' + escHtml(text) + '</a>';
-     });
+       var label = escHtml(text)
+         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+         .replace(/`([^`]+)`/g, '<code>$1</code>');
+       return '<a class="' + linkClass + '" href="' + escHtml(normalizedHref) + '"' + attrs + '>' + label + '</a>';
+     })
+     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+     .replace(/`([^`]+)`/g, '<code>$1</code>');
 }
  
 function stripMarkdown(text) {
@@ -330,6 +433,7 @@ function renderMarkdownTable(lines) {
  
 var schemaNodeUid = 0;
 var schemaTableUid = 0;
+var openApiSpec = null;
  
 function getSchemaType(schema) {
    if (!schema) return 'object';
@@ -412,9 +516,46 @@ function getSchemaEnumLine(schema) {
     return '<span class="schema-enum-chip">' + escHtml(String(value)) + '</span>';
   }).join(' ') + '</span></div>';
 }
- 
+
+function resolveSchemaRef(ref) {
+  if (!ref || typeof ref !== 'string' || !openApiSpec) return null;
+  var prefix = '#/components/schemas/';
+  if (ref.indexOf(prefix) !== 0) return null;
+  var schemas = (openApiSpec.components && openApiSpec.components.schemas) || {};
+  return schemas[ref.slice(prefix.length)] || null;
+}
+
+function dereferenceSchema(schema, seen) {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (!schema.$ref) return schema;
+  seen = seen || {};
+  if (seen[schema.$ref]) return schema;
+  var resolved = resolveSchemaRef(schema.$ref);
+  if (!resolved) return schema;
+  seen[schema.$ref] = true;
+  return dereferenceSchema(resolved, seen);
+}
+
+/* Prefer a child schema title (or resolved $ref title) over generic anyOf/oneOf/allOf labels. */
+function getCompositionLabel(keyword, childSchema, index) {
+  if (childSchema && childSchema.title) {
+    return childSchema.title;
+  }
+
+  if (childSchema && childSchema.$ref) {
+    var resolved = resolveSchemaRef(childSchema.$ref);
+    if (resolved && resolved.title) {
+      return resolved.title;
+    }
+    return childSchema.$ref.split('/').pop();
+  }
+
+  return keyword + ' ' + (index + 1);
+}
+
 function flattenSchema(name, schema, depth, isRequired, result) {
    if (!schema) return;
+   schema = dereferenceSchema(schema);
    result = result || [];
    var type = getSchemaType(schema);
    var desc = getSchemaDescription(schema);
@@ -440,13 +581,16 @@ function flattenSchema(name, schema, depth, isRequired, result) {
    }
    ['allOf', 'anyOf', 'oneOf'].forEach(function (kw) {
      if (!Array.isArray(schema[kw])) return;
-     schema[kw].forEach(function (child, i) { flattenSchema(kw + ' ' + (i + 1), child, depth + 1, false, result); });
+     schema[kw].forEach(function (child, i) {
+       flattenSchema(getCompositionLabel(kw, child, i), dereferenceSchema(child), depth + 1, false, result);
+     });
    });
    return result;
 }
  
 function buildSchemaNodeRows(name, schema, depth, parentUid, isRequired) {
    if (!schema) return '';
+   schema = dereferenceSchema(schema);
    var rows = '';
    var type = getSchemaType(schema);
    var description = getSchemaDescriptionHtml(schema);
@@ -490,7 +634,8 @@ function buildSchemaNodeRows(name, schema, depth, parentUid, isRequired) {
    ['allOf', 'anyOf', 'oneOf'].forEach(function (keyword) {
      if (!Array.isArray(schema[keyword])) return;
      schema[keyword].forEach(function (childSchema, index) {
-       rows += buildSchemaNodeRows(keyword + ' ' + (index + 1), childSchema, depth + 1, nodeId, false);
+       var label = getCompositionLabel(keyword, childSchema, index);
+       rows += buildSchemaNodeRows(label, dereferenceSchema(childSchema), depth + 1, nodeId, false);
      });
    });
    return rows;
@@ -829,36 +974,50 @@ function generatePDF(op, path) {
    }
 
    }
-   var eventPrefix = op['x-event-body-position'];
-   var hasEarlyEventBody = eventPrefix && op.description.indexOf(eventPrefix) === 0;
+   function renderPdfRequestBody() {
+     if (op.requestBody && op.requestBody.content) {
+       var ct = op.requestBody.content['application/json'];
+       if (ct) {
+         sectionHeading(requestPayloadHeading(op));
+         var exObj = ct.examples || {};
+         var exKeys = Object.keys(exObj);
+         if (exKeys.length) {
+           /* render every named example */
+           exKeys.forEach(function (key) {
+             if (exObj[key] && exObj[key].value !== undefined) {
+               subHeading(exKeys.length > 1 ? 'Example: ' + key : 'Example');
+               jsonBlock(exObj[key].value);
+             }
+           });
+         } else if (ct.schema) {
+           subHeading('Example');
+           jsonBlock(generateExampleFromSchema(ct.schema));
+         }
+         if (ct.schema) schemaTablePdf(ct.schema, isManagementEventOp(op) ? 'Configuration' : 'Command');
+       }
+     }
+   }
+
+   var printableDescription = stripLeadingDuplicateHeading(op.description, op.summary || path);
+   var eventPrefix = stripLeadingDuplicateHeading(op['x-event-body-position'], op.summary || path);
+   var hasEarlyEventBody = eventPrefix && printableDescription.indexOf(eventPrefix) === 0;
+   var renderedPdfRequestBody = false;
    if (hasEarlyEventBody) {
-     renderDescriptionBlocks(eventPrefix);
+     var eventDescriptionParts = splitDescriptionAtPublishedSection(eventPrefix);
+     if (eventDescriptionParts && eventDescriptionParts.after) {
+       renderDescriptionBlocks(eventDescriptionParts.before);
+       renderPdfRequestBody();
+       renderedPdfRequestBody = true;
+       renderDescriptionBlocks(eventDescriptionParts.after);
+     } else {
+       renderDescriptionBlocks(eventPrefix);
+     }
      renderPdfEventBody();
      renderDescriptionBlocks(op['x-event-body-after'] || '');
    } else {
-     renderDescriptionBlocks(op.description);
+     renderDescriptionBlocks(printableDescription);
    }
-   if (op.requestBody && op.requestBody.content) {
-     var ct = op.requestBody.content['application/json'];
-     if (ct) {
-       sectionHeading(requestPayloadHeading(op));
-       var exObj = ct.examples || {};
-       var exKeys = Object.keys(exObj);
-       if (exKeys.length) {
-         /* render every named example */
-         exKeys.forEach(function (key) {
-           if (exObj[key] && exObj[key].value !== undefined) {
-             subHeading(exKeys.length > 1 ? 'Example: ' + key : 'Example');
-             jsonBlock(exObj[key].value);
-           }
-         });
-       } else if (ct.schema) {
-         subHeading('Example');
-         jsonBlock(generateExampleFromSchema(ct.schema));
-       }
-       if (ct.schema) schemaTablePdf(ct.schema, isManagementEventOp(op) ? 'Configuration' : 'Command');
-     }
-   }
+   if (!renderedPdfRequestBody) renderPdfRequestBody();
 
    if (!hasEarlyEventBody) renderPdfEventBody();
  
@@ -1595,13 +1754,15 @@ function renderResponseBody(id, op) {
        resHtml = '<div class="payload-section">';
        resHtml += '<div class="payload-heading">' + escHtml(responsePayloadHeading(op)) + '</div>';
        if (resExampleJson || resSchemaHtml) {
+         var responseExampleTabLabel = isAsyncEventOp(op) && op['x-example-title'] ? op['x-example-title'] : 'Example';
+         var responseSchemaTabLabel = isAsyncEventOp(op) && op['x-schema-title'] ? op['x-schema-title'] : 'Schema';
          resHtml += '<div class="tab-bar">';
-         if (resExampleJson) resHtml += '<button class="tab-btn active" data-tab="res-ex-' + id + '">Example</button>';
-         if (resSchemaHtml) resHtml += '<button class="tab-btn' + (resExampleJson ? '' : ' active') + '" data-tab="res-sc-' + id + '">Schema</button>';
+         if (resExampleJson) resHtml += '<button class="tab-btn active" data-tab="res-ex-' + id + '">' + escHtml(responseExampleTabLabel) + '</button>';
+         if (resSchemaHtml) resHtml += '<button class="tab-btn' + (resExampleJson ? '' : ' active') + '" data-tab="res-sc-' + id + '">' + escHtml(responseSchemaTabLabel) + '</button>';
          resHtml += '</div>';
          if (resExampleJson) {
            resHtml += '<div class="tab-panel active" id="res-ex-' + id + '">';
-           if (op['x-example-title']) resHtml += '<h4 class="event-panel-heading">' + escHtml(op['x-example-title']) + '</h4>';
+           if (op['x-example-title'] && !isAsyncEventOp(op)) resHtml += '<h4 class="event-panel-heading">' + escHtml(op['x-example-title']) + '</h4>';
            if (resExKeys.length) {
              var firstResExample = resExObj[resExKeys[0]] || {};
              var firstResDesc = typeof firstResExample.description === 'string' ? firstResExample.description : '';
@@ -1625,7 +1786,7 @@ function renderResponseBody(id, op) {
            resHtml += '<pre class="language-json"><code class="language-json">' + escHtml(resExampleJson) + '</code></pre>';
            resHtml += '</div>';
          }
-         if (resSchemaHtml) resHtml += '<div class="tab-panel' + (resExampleJson ? '' : ' active') + '" id="res-sc-' + id + '">' + (op['x-schema-title'] ? '<h4 class="event-panel-heading">' + escHtml(op['x-schema-title']) + '</h4>' : '') + resSchemaHtml + '</div>';
+         if (resSchemaHtml) resHtml += '<div class="tab-panel' + (resExampleJson ? '' : ' active') + '" id="res-sc-' + id + '">' + (op['x-schema-title'] && !isAsyncEventOp(op) ? '<h4 class="event-panel-heading">' + escHtml(op['x-schema-title']) + '</h4>' : '') + resSchemaHtml + '</div>';
        }
        resHtml += '</div>';
      }
@@ -1637,7 +1798,7 @@ function renderResponseBody(id, op) {
 function renderOperation(path, method, op) {
    var summary = op.summary || path;
    var id = opIdFromPath(path);
-   var desc = op.description || '';
+   var desc = stripLeadingDuplicateHeading(op.description, summary);
  
    var reqExampleJson = '';
    var reqHtml = '';
@@ -1694,17 +1855,36 @@ function renderOperation(path, method, op) {
    var resHtml = renderResponseBody(id, op);
  
    /* The operation title is an h3, so its body headings start at h4. */
-   var mdOptions = { idPrefix: id, headingMap: { 1: 4, 2: 4, 3: 5, 4: 6, 5: 6, 6: 6 } };
+   var mdOptions = { idPrefix: id, headingMap: { 1: 4, 2: 4, 3: 4, 4: 5, 5: 6, 6: 6 } };
    var descHtml = '';
-   var eventPrefix = op['x-event-body-position'];
+   var eventPrefix = stripLeadingDuplicateHeading(op['x-event-body-position'], summary);
    if (eventPrefix && desc.indexOf(eventPrefix) === 0) {
      var eventSuffix = op['x-event-body-after'] || '';
-     descHtml = '<div class="op-description md-content">' + md(eventPrefix, mdOptions) + '</div>' + resHtml +
-       '<div class="op-description md-content">' + md(eventSuffix, mdOptions) + '</div>' + reqHtml;
-     resHtml = '';
-   } else {
-     descHtml = '<div class="op-description md-content">' + md(desc, mdOptions) + '</div>' + reqHtml;
-   }
+     var eventDescriptionParts = splitDescriptionAtPublishedSection(eventPrefix);
+     if (eventDescriptionParts && eventDescriptionParts.after) {
+       var configureDescriptionParts = splitDescriptionAtConfigureSection(eventDescriptionParts.before);
+       if (configureDescriptionParts.after) {
+         descHtml = (configureDescriptionParts.before ? '<div class="op-description md-content operation-intro">' + md(configureDescriptionParts.before, mdOptions) + '</div>' : '') +
+           '<section class="operation-content-group operation-content-group--configuration">' +
+             '<div class="op-description md-content">' + md(configureDescriptionParts.after, mdOptions) + '</div>' + reqHtml +
+           '</section>' +
+           '<section class="operation-content-group operation-content-group--published">' +
+             '<div class="op-description md-content">' + md(eventDescriptionParts.after, mdOptions) + '</div>' + resHtml +
+             (eventSuffix ? '<div class="op-description md-content">' + md(eventSuffix, mdOptions) + '</div>' : '') +
+           '</section>';
+       } else {
+         descHtml = '<div class="op-description md-content">' + md(eventDescriptionParts.before, mdOptions) + '</div>' + reqHtml +
+           '<div class="op-description md-content">' + md(eventDescriptionParts.after, mdOptions) + '</div>' + resHtml +
+           (eventSuffix ? '<div class="op-description md-content">' + md(eventSuffix, mdOptions) + '</div>' : '');
+       }
+      } else {
+        descHtml = renderOperationDescription(eventPrefix, mdOptions) + resHtml +
+          renderOperationDescription(eventSuffix, mdOptions) + reqHtml;
+      }
+      resHtml = '';
+    } else {
+      descHtml = renderOperationDescription(desc, mdOptions) + reqHtml;
+    }
 
    return '<div class="operation" id="op-' + id + '" data-op="' + encodeURIComponent(JSON.stringify(op)) + '" data-path="' + escHtml(path) + '">' +
      '<div class="op-title-bar">' +
@@ -1805,14 +1985,30 @@ function groupedTagOperations(tagName, operations, spec) {
    return groups;
 }
 
-function renderNavSubgroup(subgroup, spec) {
+function subgroupAnchorId(tagName, subgroupName) {
+   return 'subgroup-' + slugify(tagName) + '-' + slugify(subgroupName);
+}
+
+function renderNavSubgroup(subgroup, spec, tagName) {
    var html = '';
+   var visibleOperations = subgroup.operations.filter(function (entry) {
+     return !isNavExcluded(opIdFromPath(entry.path), spec);
+   });
+   var primaryEntry = visibleOperations.length ? visibleOperations[0] : null;
+   var subgroupTargetsPrimary = !!(subgroup.name && primaryEntry &&
+     normalizeComparableHeading(subgroup.name) === normalizeComparableHeading(primaryEntry.op.summary));
+   var subgroupTarget = subgroupTargetsPrimary
+     ? 'op-' + opIdFromPath(primaryEntry.path)
+     : subgroupAnchorId(tagName, subgroup.name);
    if (subgroup.name) {
-     html += '<div class="nav-subgroup">' + escHtml(subgroup.name) + '</div>';
+     html += '<a class="nav-subgroup nav-subgroup-link" href="#' + escHtml(subgroupTarget) + '"' +
+       (subgroupTargetsPrimary ? ' data-primary-operation="' + escHtml(opIdFromPath(primaryEntry.path)) + '"' : '') +
+       '>' + escHtml(subgroup.name) + '</a>';
    }
    subgroup.operations.forEach(function (entry) {
      var opId = opIdFromPath(entry.path);
      if (isNavExcluded(opId, spec)) return;
+     if (subgroupTargetsPrimary && entry === primaryEntry) return;
      html += '<a class="nav-op" href="#op-' + opId + '">' + escHtml(entry.op.summary) + '</a>';
    });
    (subgroup.sections || []).forEach(function (section) {
@@ -1836,7 +2032,7 @@ function applyTagConfig(spec, tagConfig) {
    spec._navExcluded = tagConfig.nav_excluded_operations || [];
    spec._tagDescriptions = tagConfig.tag_descriptions || {};
 }
- 
+
 /* ── Main render ── */
 function render(spec) {
    var content = document.getElementById('content');
@@ -1873,15 +2069,16 @@ function render(spec) {
  
    var groups = spec['x-tagGroups'] || [{ name: 'API', tags: Object.keys(tagMap) }];
    groups.forEach(function (group) {
+     var groupSlug = slugify(group.name);
+     var groupChildrenId = 'nav-group-' + groupSlug;
+     var groupTargetTag = (group.tags || []).filter(function (tagName) { return !!tagMap[tagName]; })[0] || '';
+     var groupTargetId = 'tag-' + slugify(groupTargetTag || group.name);
      navHtml += '<div class="nav-group" data-group="' + escHtml(group.name) + '">' +
-       (group.name === 'Management Events'
-         ? '<a class="nav-group-label nav-group-link" href="#tag-management-events">' + escHtml(group.name) + '</a>' +
-           '<button class="nav-group-indicator" type="button" aria-label="Expand or collapse Management Events" aria-controls="nav-management-events" aria-expanded="true">−</button>'
-         : '<span class="nav-group-label">' + escHtml(group.name) + '</span>' +
-           '<span class="nav-group-indicator">−</span>') +
+       '<a class="nav-group-label nav-group-link" href="#' + groupTargetId + '">' + escHtml(group.name) + '</a>' +
+       '<button class="nav-group-indicator" type="button" aria-label="Expand or collapse ' + escHtml(group.name) +
+         '" aria-controls="' + groupChildrenId + '" aria-expanded="true">&minus;</button>' +
        '</div>' +
-       '<div class="nav-group-children"' + (group.name === 'Management Events' ? ' id="nav-management-events"' : '') +
-       ' data-group-children="' + escHtml(group.name) + '">';
+       '<div class="nav-group-children" id="' + groupChildrenId + '" data-group-children="' + escHtml(group.name) + '">';
      group.tags.forEach(function (tagName) {
        var tag = tagMap[tagName];
        if (!tag) return;
@@ -1894,7 +2091,7 @@ function render(spec) {
         navHtml += '<a class="nav-tag" href="#tag-' + tagId + '">' + escHtml(tagLabel) + '</a>';
       }
       groupedTagOperations(tagName, tag.operations, spec).forEach(function (subgroup) {
-        navHtml += renderNavSubgroup(subgroup, spec);
+        navHtml += renderNavSubgroup(subgroup, spec, tagName);
       });
        html += '<div class="tag-section" id="tag-' + tagId + '">';
        // Single-tag event groups use the nav group name (e.g. "Management Events").
@@ -1911,14 +2108,16 @@ function render(spec) {
            headingMap: { 1: 3, 2: 3, 3: 4, 4: 5, 5: 6, 6: 6 }
          };
          var tagEventBody = (spec['x-tagEventBodies'] || {})[tagName];
-         var tagParts = tag.description.split('<!-- event-body -->');
+         var tagDescription = stripLeadingDuplicateHeading(tag.description, hideNavTag ? group.name : tagLabel);
+         var tagParts = tagDescription.split('<!-- event-body -->');
          html += '<div class="tag-description md-content">' + md(tagParts[0], tagOptions) + '</div>';
          if (tagEventBody && tagParts.length > 1) html += renderResponseBody('overview-' + tagId, tagEventBody);
          if (tagParts.length > 1) html += '<div class="tag-description md-content">' + md(tagParts.slice(1).join(''), tagOptions) + '</div>';
        }
        groupedTagOperations(tagName, tag.operations, spec).forEach(function (subgroup) {
          if (subgroup.name) {
-           html += '<h3 class="tag-subgroup-heading">' + escHtml(subgroup.name) + '</h3>';
+           html += '<h3 class="tag-subgroup-heading" id="' +
+             escHtml(subgroupAnchorId(tagName, subgroup.name)) + '">' + escHtml(subgroup.name) + '</h3>';
          }
          subgroup.operations.forEach(function (entry) {
            html += renderOperation(entry.path, entry.method, entry.op);
@@ -1983,7 +2182,7 @@ function render(spec) {
    function updateNavFilterChrome(query) {
      var anyVisible = false;
      document.querySelectorAll('.nav-group-children').forEach(function (children) {
-       var hasVisible = Array.prototype.slice.call(children.querySelectorAll('.nav-op, .nav-tag'))
+       var hasVisible = Array.prototype.slice.call(children.querySelectorAll('.nav-op, .nav-tag, .nav-subgroup-link'))
          .some(function (el) { return el.style.display !== 'none'; });
        if (hasVisible) anyVisible = true;
        var groupName = children.getAttribute('data-group-children');
@@ -2054,6 +2253,7 @@ function render(spec) {
         tag.style.display = (tagMatch || hasMatchingOp) ? '' : 'none';
       });
       subgroupLabels.forEach(function (label) {
+        var labelMatch = (label.textContent || '').toLowerCase().indexOf(q) !== -1;
         var next = label.nextElementSibling;
         var hasVisibleOp = false;
         while (next && !next.classList.contains('nav-subgroup') && !next.classList.contains('nav-tag') && !next.classList.contains('nav-group')) {
@@ -2063,11 +2263,11 @@ function render(spec) {
           }
           next = next.nextElementSibling;
         }
-        label.style.display = hasVisibleOp ? '' : 'none';
+        label.style.display = (labelMatch || hasVisibleOp) ? '' : 'none';
       });
       /* Auto-expand groups that have matching results */
        document.querySelectorAll('.nav-group-children').forEach(function(children) {
-         var hasVisible = Array.prototype.slice.call(children.querySelectorAll('.nav-op, .nav-tag'))
+         var hasVisible = Array.prototype.slice.call(children.querySelectorAll('.nav-op, .nav-tag, .nav-subgroup-link'))
            .some(function(el) { return el.style.display !== 'none'; });
          if (hasVisible) {
            children.classList.remove('collapsed');
@@ -2199,6 +2399,7 @@ function render(spec) {
  
    var navTagLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-tag'));
    var navOpLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-op'));
+   var navSubgroupLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-subgroup-link'));
    var navSectionLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-section'));
    var tagSections = Array.prototype.slice.call(document.querySelectorAll('.tag-section'));
    var operationSections = Array.prototype.slice.call(document.querySelectorAll('.operation'));
@@ -2293,12 +2494,17 @@ function render(spec) {
        if (isOpActive && bestSectionLink) isOpActive = false;
        link.classList.toggle('active', isOpActive);
      });
+     navSubgroupLinks.forEach(function(link) {
+       var isPrimaryActive = !!activeOpId && link.getAttribute('href') === '#' + activeOpId;
+       if (isPrimaryActive && bestSectionLink) isPrimaryActive = false;
+       link.classList.toggle('active', isPrimaryActive);
+     });
      navTagLinks.forEach(function(link) {
        link.classList.toggle('active', !!activeTagId && link.getAttribute('href') === '#' + activeTagId);
      });
      /* Active group highlighting */
      document.querySelectorAll('.nav-group').forEach(function(g) { g.classList.remove('active-group'); });
-     var activeOp = nav.querySelector('.nav-op.active');
+     var activeOp = nav.querySelector('.nav-op.active, .nav-subgroup-link.active');
      if (activeOp) {
        var activeChildren = activeOp.closest ? activeOp.closest('.nav-group-children') : null;
        if (!activeChildren) {
@@ -2330,7 +2536,7 @@ function render(spec) {
          }
        }
      }
-     var activeNavLink = nav.querySelector('.nav-op.active') || nav.querySelector('.nav-tag.active');
+     var activeNavLink = nav.querySelector('.nav-op.active') || nav.querySelector('.nav-subgroup-link.active') || nav.querySelector('.nav-tag.active');
      revealActiveNavLink(activeNavLink);
    }
  
@@ -2395,7 +2601,7 @@ function render(spec) {
      document.addEventListener('keydown', function (e) {
        if (e.key === 'Escape') closeSidebar();
      });
-     document.querySelectorAll('.nav-tag, .nav-op, .nav-section, .nav-group-link').forEach(function (link) {
+     document.querySelectorAll('.nav-tag, .nav-op, .nav-section, .nav-subgroup-link, .nav-group-link').forEach(function (link) {
        link.addEventListener('click', function () {
          if (window.innerWidth <= 768) setState(false);
        });
@@ -2455,6 +2661,7 @@ Promise.all([
   fetchTagConfig()
 ])
   .then(function (results) {
+    openApiSpec = results[0];
     applyTagConfig(results[0], results[1] || {});
     loadDisplayNameConfig({}, results[1] || {});
     applyOperationSummaries(results[0]);
