@@ -2173,7 +2173,74 @@ paths:
         radio start/stop conditions. |
 
 
-        ## 4. Mode and field rules
+        ## 4. Operating Modes
+
+
+        ### SIMPLE
+
+
+        `SIMPLE` mode reads and reports every unique tag in the radio''s field of view.
+
+
+        By default, the reader:
+
+        - Reads tags on all antenna ports. Use `antennas` to select specific ports.
+
+        - Reports all unique tags. Use `filter` to restrict which tags are reported.
+
+
+        ### INVENTORY
+
+
+        `INVENTORY` mode reads tags and reports every unique tag for each antenna at a periodic interval. Each report also includes metadata such as peak RSSI and the number of reads recorded for the antenna during the interval.
+
+
+        By default, the reader:
+
+        - Reads tags on all antenna ports. Use `antennas` to select specific ports.
+
+        - Reports each unique tag once per reporting interval. Use `filter` to restrict which tags are reported.
+
+        - Reports tags every second. Use `modeSpecificSettings.interval` to change the reporting interval.
+
+
+        ### CUSTOM
+
+
+        `CUSTOM` mode exposes the low-level radio configuration options and is intended for advanced users.
+
+
+        ### PORTAL
+
+
+        `PORTAL` mode reports every unique tag that passes each antenna after a GPI event starts the read period. The reader continues reading until no new unique tag is detected for the configured stop interval, and then waits for the next GPI event.
+
+
+        By default, the reader:
+
+        - Reads tags on all antenna ports. Use `antennas` to select specific ports.
+
+        - Reports all unique tags once. Use `filter` to restrict which tags are reported.
+
+        - Waits for a `LOW` signal on GPI port 1. Use `modeSpecificSettings.startTrigger` to change the trigger.
+
+        - Stops after no new unique tag is detected for 3 seconds. Use `modeSpecificSettings.stopInterval` to change the stop interval.
+
+
+        ### CONVEYOR
+
+
+        `CONVEYOR` mode reads tags and reports every unique tag for each antenna.
+
+
+        By default, the reader:
+
+        - Reads tags on all antenna ports. Use `antennas` to select specific ports.
+
+        - Reports all unique tags once. Use `filter` to restrict which tags are reported.
+
+
+        ## 5. Mode and Field Rules
 
 
         | Rule | Detail |
@@ -10819,8 +10886,8 @@ components:
     inventorysettings.v1:
       title: inventorySettings
       type: object
-      description: Reader settings for inventory mode. If absent, the reader will
-        report each tag on each antenna once per minute.
+      description: Reader settings for inventory mode. If absent, the reader reports
+        each tag on each antenna once per second.
       properties:
         interval:
           type: object
